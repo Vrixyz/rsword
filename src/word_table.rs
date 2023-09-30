@@ -14,86 +14,81 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn get_vertical_words(&self) -> Vec<(IVec2, Vec<&Tile>)> {
-        let mut key_by_x = self
-            .tiles
-            .keys()
-            .into_iter()
-            .copied()
-            .collect::<Vec<IVec2>>();
-        key_by_x.reverse();
-        key_by_x.sort_unstable_by_key(|v| -v.x);
-        let mut vertical_words = vec![];
-        let Some(mut previous_pos) = key_by_x.pop() else {
-            return vertical_words;
-        };
-        dbg!("first word at: ", previous_pos);
-        let mut current_word = (previous_pos, vec![&self.tiles[&previous_pos]]);
-        while let Some(new_pos) = key_by_x.pop() {
-            let mut new_word = false;
-            if new_pos.x != previous_pos.x {
-                dbg!("new vertical line to x = ", new_pos.x);
-                new_word = true;
-            }
-            if new_pos.y != previous_pos.y + 1 {
-                dbg!("new vertical line to y = ", new_pos.y);
-                new_word = true;
-            }
-            if new_word {
-                vertical_words.push(current_word);
-                current_word = (new_pos, vec![&self.tiles[&new_pos]]);
-            } else {
-                current_word.1.push(&self.tiles[&new_pos]);
-            }
-            previous_pos = new_pos;
-        }
-        vertical_words.push(current_word);
-        vertical_words
-    }
-    pub fn get_horizontal_words(&self) -> Vec<(IVec2, Vec<&Tile>)> {
-        let mut key_by_y = self
-            .tiles
-            .keys()
-            .into_iter()
-            .copied()
-            .collect::<Vec<IVec2>>();
-        key_by_y.reverse();
-        key_by_y.sort_unstable_by_key(|v| -v.y);
+    pub fn get_vertical_words(&self) -> Vec<WordOnTable> {
+        let mut ordered_keys = self.tiles.keys().copied().collect::<Vec<IVec2>>();
+        ordered_keys.reverse();
+        ordered_keys.sort_unstable_by_key(|v| -v.y);
         let mut horizontal_words = vec![];
-        let Some(mut previous_pos) = key_by_y.pop() else {
-            return horizontal_words;
-        };
-        dbg!("first word at: ", previous_pos);
-        let mut current_word = (previous_pos, vec![&self.tiles[&previous_pos]]);
-        while let Some(new_pos) = key_by_y.pop() {
-            let mut new_word = false;
-            if new_pos.y != previous_pos.y {
-                dbg!("new vertical line to y = ", new_pos.y);
-                new_word = true;
+        while let Some(mut moving_letter_pos) = ordered_keys.pop() {
+            let mut current_word = WordOnTable {
+                position: moving_letter_pos,
+                tiles: vec![],
+            };
+            while let Some(next_letter) = self.tiles.get(&moving_letter_pos) {
+                current_word.tiles.push(next_letter);
+                moving_letter_pos += IVec2::Y;
             }
-            if new_pos.x != previous_pos.x + 1 {
-                dbg!("new vertical line to x = ", new_pos.x);
-                new_word = true;
-            }
-            if new_word {
-                horizontal_words.push(current_word);
-                current_word = (new_pos, vec![&self.tiles[&new_pos]]);
-            } else {
-                current_word.1.push(&self.tiles[&new_pos]);
-            }
-            previous_pos = new_pos;
+            let word_range = current_word.position.y
+                ..=(current_word.position.y + current_word.tiles.len() as i32);
+            ordered_keys.retain(|e| e.x != current_word.position.x || !word_range.contains(&e.y));
+            horizontal_words.push(current_word);
         }
-        horizontal_words.push(current_word);
+        horizontal_words
+    }
+    pub fn get_horizontal_words(&self) -> Vec<WordOnTable> {
+        let mut ordered_keys = self.tiles.keys().copied().collect::<Vec<IVec2>>();
+        ordered_keys.reverse();
+        ordered_keys.sort_unstable_by_key(|v| -v.x);
+        let mut horizontal_words = vec![];
+        while let Some(mut moving_letter_pos) = ordered_keys.pop() {
+            let mut current_word = WordOnTable {
+                position: moving_letter_pos,
+                tiles: vec![],
+            };
+            while let Some(next_letter) = self.tiles.get(&moving_letter_pos) {
+                current_word.tiles.push(next_letter);
+                moving_letter_pos += IVec2::X;
+            }
+            let word_range = current_word.position.x
+                ..=(current_word.position.x + current_word.tiles.len() as i32);
+            ordered_keys.retain(|e| e.y != current_word.position.y || !word_range.contains(&e.x));
+            horizontal_words.push(current_word);
+        }
         horizontal_words
     }
 
-    pub fn get_words(&self) -> (Vec<(IVec2, Vec<&Tile>)>, Vec<(IVec2, Vec<&Tile>)>) {
-        (self.get_vertical_words(), self.get_horizontal_words())
+    pub fn get_words(&self) -> TableWordsList {
+        TableWordsList {
+            horizontal: self.get_horizontal_words(),
+            vertical: self.get_vertical_words(),
+        }
     }
+}
+
+pub struct WordOnTable<'a> {
+    pub position: IVec2,
+    pub tiles: Vec<&'a Tile>,
+}
+
+impl<'a> WordOnTable<'a> {
+    pub fn get_word(&'a self) -> String {
+        return self
+            .tiles
+            .iter()
+            .map(|tile| tile.character)
+            .collect::<String>();
+    }
+}
+
+pub struct TableWordsList<'a> {
+    pub horizontal: Vec<WordOnTable<'a>>,
+    pub vertical: Vec<WordOnTable<'a>>,
 }
 
 mod tests {
     use std::collections::HashMap;
+
+    use glam::IVec2;
 
     use super::{Table, Tile};
 
@@ -136,16 +131,32 @@ mod tests {
                         character: 'u',
                     },
                 ),
+                (
+                    (4, 2).into(),
+                    Tile {
+                        team: 0,
+                        character: 'a',
+                    },
+                ),
             ]),
         };
         let words = table.get_words();
-        for horizontal_word in words.0 {
-            let word = horizontal_word
-                .1
-                .iter()
-                .map(|tile| tile.character)
-                .collect::<String>();
-            dbg!(word);
-        }
+        assert!(words.horizontal.iter().any(|t| t.get_word() == "e"));
+        assert!(words
+            .horizontal
+            .iter()
+            .any(|t| t.get_word() == "you" && t.position == IVec2::new(0, 2)));
+        assert!(words.horizontal.iter().any(|t| t.get_word() == "a"));
+        assert!(words.horizontal.iter().any(|t| t.get_word() == "e"));
+        assert_eq!(words.horizontal.len(), 4);
+
+        assert!(words.vertical.iter().any(|t| t.get_word() == "u"));
+        assert!(words
+            .vertical
+            .iter()
+            .any(|t| t.get_word() == "hey" && t.position == IVec2::new(0, 0)));
+        assert!(words.vertical.iter().any(|t| t.get_word() == "a"));
+        assert!(words.vertical.iter().any(|t| t.get_word() == "o"));
+        assert_eq!(words.vertical.len(), 4);
     }
 }
