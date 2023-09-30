@@ -1,8 +1,5 @@
 use glam::IVec2;
-use std::{
-    collections::{HashMap, VecDeque},
-    vec,
-};
+use std::{collections::HashMap, vec};
 
 pub struct Tile {
     pub team: usize,

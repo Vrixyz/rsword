@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    io::BufRead,
-};
+use std::{collections::BTreeMap, io::BufRead};
 
 pub struct PossibleWords {
     pub words_tree: WordTree,
@@ -23,7 +20,6 @@ impl WordTree {
         }
         for kv in self.next.iter() {
             let mut new_parents = parents.clone();
-            dbg!(kv.0);
             new_parents.push(*kv.0);
             kv.1._visit(new_parents, callback);
         }
@@ -73,9 +69,16 @@ fantastic
 "#;
         let tree_root = super::load_from(words.as_bytes());
         let mut count = 0;
-        tree_root.words_tree.visit(&mut |_| {
+        let mut res = vec![];
+        tree_root.words_tree.visit(&mut |v| {
             count += 1;
+            res.push(v.iter().collect::<String>())
         });
+        assert!(res.contains(&"hello".to_string()));
+        assert!(res.contains(&"world".to_string()));
+        assert!(res.contains(&"hell".to_string()));
+        assert!(res.contains(&"worms".to_string()));
+        assert!(res.contains(&"fantastic".to_string()));
         assert_eq!(count, 5);
     }
 }
