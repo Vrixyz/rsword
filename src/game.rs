@@ -1,4 +1,12 @@
-use bevy::{prelude::*, sprite::MaterialMesh2dBundle, text::DEFAULT_FONT_HANDLE};
+use bevy::{
+    ecs::{
+        component,
+        system::{EntityCommand, EntityCommands},
+    },
+    prelude::*,
+    sprite::MaterialMesh2dBundle,
+    text::DEFAULT_FONT_HANDLE,
+};
 //use bevy_eventlistener::prelude::*;
 use bevy_mod_picking::prelude::*;
 use std::{collections::HashMap, fs::File, io::BufReader, time::Duration};
@@ -80,6 +88,10 @@ fn setup(mut commands: Commands) {
     commands.spawn(Table(table));
 }
 
+fn round_to_nearest(value: f32, multiple: f32) -> f32 {
+    (value / multiple).round() * multiple
+}
+
 fn create_tiles(
     mut commands: Commands,
     q_table: Query<&Table>,
@@ -107,10 +119,19 @@ fn create_tiles(
                     transform: tile_transform,
                     ..default()
                 },
-                PickableBundle::default(),    // <- Makes the mesh pickable.
-                RaycastPickTarget::default(), // <- Needed for the raycast backend.
                 On::<Pointer<DragStart>>::target_insert(Pickable::IGNORE), // Disable picking
-                On::<Pointer<DragEnd>>::target_insert(Pickable::default()), // Re-enable picking
+                On::<Pointer<DragEnd>>::run(
+                    move |event: ListenerMut<Pointer<DragEnd>>,
+                          mut transforms: Query<&mut Transform>,
+                          mut commands: Commands| {
+                        let Ok(mut transform) = transforms.get_mut(event.listener()) else {
+                            return;
+                        };
+                        transform.translation.x = round_to_nearest(transform.translation.x, 60f32); // Make the square follow the mouse
+                        transform.translation.y = round_to_nearest(transform.translation.y, 60f32);
+                        commands.entity(event.target()).insert(Pickable::default());
+                    },
+                ),
                 On::<Pointer<Drag>>::listener_component_mut::<Transform>(|drag, transform| {
                     transform.translation.x += drag.delta.x; // Make the square follow the mouse
                     transform.translation.y -= drag.delta.y;
