@@ -1,100 +1,44 @@
 use bevy::{
-    ecs::{
-        component,
-        system::{EntityCommand, EntityCommands},
-    },
-    prelude::*,
-    sprite::MaterialMesh2dBundle,
-    text::DEFAULT_FONT_HANDLE,
+    prelude::*, render::view::RenderLayers, sprite::MaterialMesh2dBundle,
+    text::DEFAULT_FONT_HANDLE, transform::systems::propagate_transforms,
 };
 //use bevy_eventlistener::prelude::*;
 use bevy_mod_picking::prelude::*;
-use std::{collections::HashMap, fs::File, io::BufReader, time::Duration};
+use bevy_pancam::*;
+use std::{fs::File, io::BufReader};
+
+use self::setup::{create_inventory, MainCamera, TilesInventory};
 
 use super::word_tree::load_from;
-use crate::{word_table::Tile, word_tree::PossibleWords};
+use crate::word_tree::PossibleWords;
+
+mod setup;
 
 pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((DefaultPlugins, DefaultPickingPlugins));
+        app.add_plugins((DefaultPlugins, DefaultPickingPlugins, PanCamPlugin));
         let f = File::open("assets/scrabble.en.txt").expect("Could not read file.");
         let reader = BufReader::new(f);
         let tree_root = load_from(reader);
         app.insert_resource(WordsDictionary(tree_root));
 
-        app.add_systems(Startup, setup);
-        app.add_systems(PostStartup, create_tiles);
+        app.add_systems(Startup, setup::setup);
+        app.add_systems(PostStartup, (create_tiles, create_inventory));
     }
 }
 
 #[derive(Resource)]
 pub struct WordsDictionary(PossibleWords);
 
-#[derive(Component)]
-pub struct Table(super::word_table::Table);
-
-fn setup(mut commands: Commands) {
-    // 2d camera
-    commands.spawn((Camera2dBundle::default(), RaycastPickCamera::default()));
-
-    let table = super::word_table::Table {
-        tiles: HashMap::from([
-            (
-                (0, 0).into(),
-                Tile {
-                    team: 0,
-                    character: 'h',
-                },
-            ),
-            (
-                (0, 1).into(),
-                Tile {
-                    team: 0,
-                    character: 'e',
-                },
-            ),
-            (
-                (0, 2).into(),
-                Tile {
-                    team: 0,
-                    character: 'y',
-                },
-            ),
-            (
-                (1, 2).into(),
-                Tile {
-                    team: 0,
-                    character: 'o',
-                },
-            ),
-            (
-                (2, 2).into(),
-                Tile {
-                    team: 0,
-                    character: 'u',
-                },
-            ),
-            (
-                (4, 2).into(),
-                Tile {
-                    team: 0,
-                    character: 'a',
-                },
-            ),
-        ]),
-    };
-    commands.spawn(Table(table));
-}
-
 fn round_to_nearest(value: f32, multiple: f32) -> f32 {
-    (value / multiple).round() * multiple
+    dbg!((value / multiple).round() * multiple)
 }
 
 fn create_tiles(
     mut commands: Commands,
-    q_table: Query<&Table>,
+    q_table: Query<&setup::Table>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
@@ -119,27 +63,62 @@ fn create_tiles(
                     transform: tile_transform,
                     ..default()
                 },
-                On::<Pointer<DragStart>>::target_insert(Pickable::IGNORE), // Disable picking
+                On::<Pointer<DragStart>>::run(
+                    move |event: ListenerMut<Pointer<DragStart>>,
+                          mut t: Query<&mut Transform, Without<Camera>>,
+                          mut camera: Query<(&GlobalTransform, &Camera), With<MainCamera>>,
+                          mut pancams: Query<&mut PanCam>,
+                          mut commands: Commands| {
+                        for mut pancam in &mut pancams {
+                            pancam.enabled = false;
+                        }
+                        commands.entity(event.target()).insert(Pickable::IGNORE);
+                        commands
+                            .entity(event.listener())
+                            .insert(RenderLayers::layer(1));
+                        commands
+                            .entity(event.target())
+                            .insert(RenderLayers::layer(1));
+                        let mut transform = t.get_mut(event.listener()).unwrap();
+                        let (camera_position, camera) = camera.single();
+                        /*let offset = camera
+                            .world_to_viewport(camera_position, transform.translation)
+                            .unwrap();
+                        let offset = camera
+                            .viewport_to_world_2d(camera_position, offset)
+                            .unwrap();
+                        transform.translation = offset.extend(0f32);*/
+                        transform.translation.z = 10f32;
+                    },
+                ), // Disable picking + pancam
+                On::<Pointer<Drag>>::listener_component_mut::<Transform>(|drag, transform| {
+                    transform.translation.x += drag.delta.x; // Make the square follow the mouse
+                    transform.translation.y -= drag.delta.y;
+                }),
                 On::<Pointer<DragEnd>>::run(
                     move |event: ListenerMut<Pointer<DragEnd>>,
+                          mut pancams: Query<&mut PanCam>,
                           mut transforms: Query<&mut Transform>,
+                          inventories: Query<&TilesInventory>,
                           mut commands: Commands| {
+                        for mut pancam in &mut pancams {
+                            pancam.enabled = true;
+                        }
                         let Ok(mut transform) = transforms.get_mut(event.listener()) else {
                             return;
                         };
                         transform.translation.x = round_to_nearest(transform.translation.x, 60f32); // Make the square follow the mouse
                         transform.translation.y = round_to_nearest(transform.translation.y, 60f32);
                         commands.entity(event.target()).insert(Pickable::default());
+                        commands
+                            .entity(event.listener())
+                            .insert(RenderLayers::layer(0));
+                        commands
+                            .entity(event.target())
+                            .insert(RenderLayers::layer(0));
+                        transform.translation.z = 0f32;
                     },
                 ),
-                On::<Pointer<Drag>>::listener_component_mut::<Transform>(|drag, transform| {
-                    transform.translation.x += drag.delta.x; // Make the square follow the mouse
-                    transform.translation.y -= drag.delta.y;
-                }),
-                On::<Pointer<Drop>>::commands_mut(|event, commands| {
-                    //commands.entity(event.dropped).insert(Spin(FRAC_PI_2)); // Spin dropped entity
-                    //commands.entity(event.target).insert(Spin(-FRAC_PI_2)); // Spin dropped-on entity
-                }),
             ))
             .with_children(|parent| {
                 parent.spawn((

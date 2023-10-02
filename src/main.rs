@@ -1,6 +1,6 @@
 mod game;
-mod word_table;
-mod word_tree;
+pub mod word_table;
+pub mod word_tree;
 
 use bevy::prelude::*;
 use game::GamePlugin;
