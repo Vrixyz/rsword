@@ -3,11 +3,11 @@ use bevy::{
     text::DEFAULT_FONT_HANDLE, transform::systems::propagate_transforms,
 };
 //use bevy_eventlistener::prelude::*;
-use bevy_mod_picking::prelude::*;
+use bevy_mod_picking::{backends::raycast::RaycastPickTarget, prelude::*};
 use bevy_pancam::*;
 use std::{fs::File, io::BufReader};
 
-use self::setup::{create_inventory, MainCamera, TilesInventory};
+use self::setup::{create_inventory, CameraUI, MainCamera, TilesInventory};
 
 use super::word_tree::load_from;
 use crate::word_tree::PossibleWords;
@@ -65,8 +65,11 @@ fn create_tiles(
                 },
                 On::<Pointer<DragStart>>::run(
                     move |event: ListenerMut<Pointer<DragStart>>,
-                          mut t: Query<&mut Transform, Without<Camera>>,
-                          mut camera: Query<(&GlobalTransform, &Camera), With<MainCamera>>,
+                          mut t: Query<&mut Transform, Without<MainCamera>>,
+                          camera_world: Query<
+                        (&Transform, &OrthographicProjection),
+                        With<MainCamera>,
+                    >,
                           mut pancams: Query<&mut PanCam>,
                           mut commands: Commands| {
                         for mut pancam in &mut pancams {
@@ -80,14 +83,20 @@ fn create_tiles(
                             .entity(event.target())
                             .insert(RenderLayers::layer(1));
                         let mut transform = t.get_mut(event.listener()).unwrap();
-                        let (camera_position, camera) = camera.single();
-                        /*let offset = camera
-                            .world_to_viewport(camera_position, transform.translation)
-                            .unwrap();
-                        let offset = camera
-                            .viewport_to_world_2d(camera_position, offset)
-                            .unwrap();
-                        transform.translation = offset.extend(0f32);*/
+                        let (camera_world_transform, proj) = camera_world.single();
+
+                        dbg!(camera_world_transform.scale);
+
+                        let to_world =
+                            Mat4::from_scale(Vec3::ONE / proj.scale) * transform.compute_matrix();
+                        let to_camera = camera_world_transform.compute_matrix();
+
+                        let to_ui = to_world * to_camera.inverse();
+
+                        let position_relative_to_camera = Transform::from_matrix(to_ui);
+
+                        *transform = position_relative_to_camera;
+                        //transform.scale = Vec3::ONE * proj.scale;
                         transform.translation.z = 10f32;
                     },
                 ), // Disable picking + pancam
@@ -98,7 +107,9 @@ fn create_tiles(
                 On::<Pointer<DragEnd>>::run(
                     move |event: ListenerMut<Pointer<DragEnd>>,
                           mut pancams: Query<&mut PanCam>,
-                          mut transforms: Query<&mut Transform>,
+                          camera_world: Query<&Transform, With<MainCamera>>,
+                          camera_ui: Query<&OrthographicProjection, With<MainCamera>>,
+                          mut transforms: Query<&mut Transform, Without<MainCamera>>,
                           inventories: Query<&TilesInventory>,
                           mut commands: Commands| {
                         for mut pancam in &mut pancams {
@@ -107,6 +118,15 @@ fn create_tiles(
                         let Ok(mut transform) = transforms.get_mut(event.listener()) else {
                             return;
                         };
+                        let camera_world_projection = camera_ui.single();
+                        let camera_transform = camera_world.single();
+
+                        let to_ui = Mat4::from_scale(Vec3::ONE * camera_world_projection.scale)
+                            * transform.compute_matrix();
+                        let to_camera = camera_transform.compute_matrix();
+
+                        let to_ui = to_ui * to_camera;
+                        *transform = Transform::from_matrix(to_ui);
                         transform.translation.x = round_to_nearest(transform.translation.x, 60f32); // Make the square follow the mouse
                         transform.translation.y = round_to_nearest(transform.translation.y, 60f32);
                         commands.entity(event.target()).insert(Pickable::default());

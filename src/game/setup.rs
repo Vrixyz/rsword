@@ -3,7 +3,7 @@ use bevy::{
     sprite::MaterialMesh2dBundle,
 };
 use bevy_mod_picking::{
-    prelude::{RaycastPickCamera, RaycastPickTarget},
+    backends::raycast::{RaycastBackendSettings, RaycastPickCamera},
     PickableBundle,
 };
 use bevy_pancam::*;
@@ -24,6 +24,9 @@ pub struct MainCamera;
 pub struct CameraUI;
 
 pub(super) fn setup(mut commands: Commands) {
+    commands.insert_resource(RaycastBackendSettings {
+        require_markers: true,
+    });
     // 2d world camera
     commands.spawn((
         Camera2dBundle::default(),
