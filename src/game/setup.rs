@@ -30,7 +30,7 @@ pub(super) fn setup(mut commands: Commands) {
     // 2d world camera
     commands.spawn((
         Camera2dBundle::default(),
-        RaycastPickCamera::default(),
+        RaycastPickCamera,
         PanCam::default(),
         MainCamera,
     ));

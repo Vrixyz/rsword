@@ -1,5 +1,5 @@
 use bevy::{
-    prelude::*, render::view::RenderLayers, sprite::MaterialMesh2dBundle,
+    log::Level, prelude::*, render::view::RenderLayers, sprite::MaterialMesh2dBundle,
     text::DEFAULT_FONT_HANDLE, transform::systems::propagate_transforms,
 };
 //use bevy_eventlistener::prelude::*;
@@ -73,6 +73,7 @@ fn create_tiles(
                           mut pancams: Query<&mut PanCam>,
                           mut commands: Commands| {
                         for mut pancam in &mut pancams {
+                            bevy::utils::tracing::event!(Level::INFO, "disabling pancams");
                             pancam.enabled = false;
                         }
                         commands.entity(event.target()).insert(Pickable::IGNORE);
