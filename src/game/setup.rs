@@ -3,7 +3,7 @@ use bevy::{
     sprite::MaterialMesh2dBundle,
 };
 use bevy_mod_picking::{
-    backends::raycast::{RaycastBackendSettings, RaycastPickCamera},
+    backends::raycast::{RaycastBackendSettings, RaycastPickable},
     PickableBundle,
 };
 use bevy_pancam::*;
@@ -28,12 +28,7 @@ pub(super) fn setup(mut commands: Commands) {
         require_markers: true,
     });
     // 2d world camera
-    commands.spawn((
-        Camera2dBundle::default(),
-        RaycastPickCamera,
-        PanCam::default(),
-        MainCamera,
-    ));
+    commands.spawn((Camera2dBundle::default(), RaycastPickable, MainCamera));
 
     let table = crate::word_table::Table {
         tiles: HashMap::from([
@@ -102,7 +97,6 @@ pub(super) fn create_inventory(
             ..default()
         },
         RenderLayers::layer(1),
-        RaycastPickCamera::default(),
         CameraUI,
     ));
 

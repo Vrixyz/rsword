@@ -1,9 +1,9 @@
 use bevy::{
     log::Level, prelude::*, render::view::RenderLayers, sprite::MaterialMesh2dBundle,
-    text::DEFAULT_FONT_HANDLE, transform::systems::propagate_transforms,
+    transform::systems::propagate_transforms,
 };
 //use bevy_eventlistener::prelude::*;
-use bevy_mod_picking::{backends::raycast::RaycastPickTarget, prelude::*};
+use bevy_mod_picking::{backends::raycast::RaycastPickable, prelude::*};
 use bevy_pancam::*;
 use std::{fs::File, io::BufReader};
 
@@ -46,7 +46,7 @@ fn create_tiles(
         return;
     };
     let text_style = TextStyle {
-        font: DEFAULT_FONT_HANDLE.typed_weak(),
+        font: Default::default(),
         font_size: 60.0,
         color: Color::WHITE,
     };
@@ -143,8 +143,6 @@ fn create_tiles(
             ))
             .with_children(|parent| {
                 parent.spawn((
-                    // As noted above, we are adding children here but we don't need to add an event
-                    // listener. Events on children will bubble up to the parent!
                     MaterialMesh2dBundle {
                         mesh: meshes.add(Mesh::from(shape::Quad::default())).into(),
                         transform: Transform::from_translation(Vec3::NEG_Z)
@@ -153,7 +151,7 @@ fn create_tiles(
                         ..Default::default()
                     },
                     PickableBundle::default(),
-                    RaycastPickTarget::default(),
+                    RaycastPickable,
                 ));
             });
     }

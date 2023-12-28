@@ -6,11 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = "0.11.3"
-bevy_eventlistener = "0.5.0"
-bevy_mod_picking = { git = "https://github.com/aevyrie/bevy_mod_picking.git", rev = "254c9e1bbadb22bfcda669e0a0fa815bedff25b4" }
-bevy_pancam = "0.9.0"
-glam = "0.24.2"
+bevy = "0.12"
+bevy_eventlistener = "0.6"
+bevy_mod_picking = "0.17"
+bevy_pancam = "0.10"
+glam = "0.24"
 
 [patch.crates-io]
 bevy_pancam = { path = "../bevy_pancam" }
