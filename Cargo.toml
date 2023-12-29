@@ -8,9 +8,11 @@ edition = "2021"
 [dependencies]
 bevy = "0.12"
 bevy_eventlistener = "0.6"
+bevy_eventlistener_core = "0.6"
 bevy_mod_picking = "0.17"
 bevy_pancam = "0.10"
 glam = "0.24"
+tracing-subscriber = "0.3.17"
 
 [patch.crates-io]
 bevy_pancam = { path = "../bevy_pancam" }

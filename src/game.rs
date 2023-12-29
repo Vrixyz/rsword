@@ -1,13 +1,16 @@
 use bevy::{
-    log::Level, prelude::*, render::view::RenderLayers, sprite::MaterialMesh2dBundle,
-    transform::systems::propagate_transforms,
+    log::{self, Level},
+    prelude::*,
+    render::view::RenderLayers,
+    sprite::MaterialMesh2dBundle,
+    utils::tracing,
 };
 //use bevy_eventlistener::prelude::*;
 use bevy_mod_picking::{backends::raycast::RaycastPickable, prelude::*};
 use bevy_pancam::*;
 use std::{fs::File, io::BufReader};
 
-use self::setup::{create_inventory, CameraUI, MainCamera, TilesInventory};
+use self::setup::{create_inventory, MainCamera, TilesInventory};
 
 use super::word_tree::load_from;
 use crate::word_tree::PossibleWords;
@@ -26,6 +29,16 @@ impl Plugin for GamePlugin {
 
         app.add_systems(Startup, setup::setup);
         app.add_systems(PostStartup, (create_tiles, create_inventory));
+        /*
+        app.configure_sets(
+            PreUpdate,
+            (
+                bevy_eventlistener::EventListenerSet,
+                bevy_pancam::PanCamSystemSet,
+            )
+                .chain(),
+        );*/
+        dbg!("test");
     }
 }
 
@@ -33,7 +46,7 @@ impl Plugin for GamePlugin {
 pub struct WordsDictionary(PossibleWords);
 
 fn round_to_nearest(value: f32, multiple: f32) -> f32 {
-    dbg!((value / multiple).round() * multiple)
+    (value / multiple).round() * multiple
 }
 
 fn create_tiles(
@@ -72,6 +85,7 @@ fn create_tiles(
                     >,
                           mut pancams: Query<&mut PanCam>,
                           mut commands: Commands| {
+                        tracing::event!(Level::INFO, "disable pancams");
                         for mut pancam in &mut pancams {
                             bevy::utils::tracing::event!(Level::INFO, "disabling pancams");
                             pancam.enabled = false;
@@ -85,8 +99,6 @@ fn create_tiles(
                             .insert(RenderLayers::layer(1));
                         let mut transform = t.get_mut(event.listener()).unwrap();
                         let (camera_world_transform, proj) = camera_world.single();
-
-                        dbg!(camera_world_transform.scale);
 
                         let to_world =
                             Mat4::from_scale(Vec3::ONE / proj.scale) * transform.compute_matrix();
@@ -104,6 +116,7 @@ fn create_tiles(
                 On::<Pointer<Drag>>::listener_component_mut::<Transform>(|drag, transform| {
                     transform.translation.x += drag.delta.x; // Make the square follow the mouse
                     transform.translation.y -= drag.delta.y;
+                    tracing::event!(Level::INFO, "drag to {:?}", transform.translation);
                 }),
                 On::<Pointer<DragEnd>>::run(
                     move |event: ListenerMut<Pointer<DragEnd>>,
@@ -130,6 +143,7 @@ fn create_tiles(
                         *transform = Transform::from_matrix(to_ui);
                         transform.translation.x = round_to_nearest(transform.translation.x, 60f32); // Make the square follow the mouse
                         transform.translation.y = round_to_nearest(transform.translation.y, 60f32);
+                        tracing::event!(Level::INFO, "stop drag to {:?}", transform.translation);
                         commands.entity(event.target()).insert(Pickable::default());
                         commands
                             .entity(event.listener())
