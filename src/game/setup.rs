@@ -7,9 +7,11 @@ use bevy_mod_picking::{
     PickableBundle,
 };
 use bevy_pancam::*;
-use std::collections::HashMap;
+use std::{collections::HashMap, fs::File, io::BufReader};
 
-use crate::word_table::Tile;
+use crate::{word_table::Tile, word_tree::load_from};
+
+use super::WordsDictionary;
 
 #[derive(Component)]
 pub struct Table(pub crate::word_table::Table);
@@ -23,12 +25,29 @@ pub struct MainCamera;
 #[derive(Component)]
 pub struct CameraUI;
 
+#[derive(Component)]
+pub struct GameMarker;
+
+pub(super) fn unsetup(mut commands: Commands, q_to_despawn: Query<Entity, With<GameMarker>>) {
+    commands.remove_resource::<WordsDictionary>();
+    for e in q_to_despawn.iter() {
+        commands.entity(e).despawn_recursive();
+    }
+}
+
 pub(super) fn setup(mut commands: Commands) {
-    commands.insert_resource(RaycastBackendSettings {
-        require_markers: true,
-    });
+    let f = File::open("assets/scrabble.en.txt").expect("Could not read file.");
+    let reader = BufReader::new(f);
+    let tree_root = load_from(reader);
+    commands.insert_resource(WordsDictionary(tree_root));
     // 2d world camera
-    commands.spawn((Camera2dBundle::default(), RaycastPickable, MainCamera));
+    commands.spawn((
+        Camera2dBundle::default(),
+        PanCam::default(),
+        RaycastPickable,
+        MainCamera,
+        GameMarker,
+    ));
 
     let table = crate::word_table::Table {
         tiles: HashMap::from([
@@ -76,7 +95,7 @@ pub(super) fn setup(mut commands: Commands) {
             ),
         ]),
     };
-    commands.spawn(Table(table));
+    commands.spawn((Table(table), GameMarker));
 }
 
 pub(super) fn create_inventory(
@@ -86,6 +105,7 @@ pub(super) fn create_inventory(
 ) {
     // 2d inventory camera
     commands.spawn((
+        GameMarker,
         Camera2dBundle {
             camera_2d: Camera2d {
                 clear_color: ClearColorConfig::None,
@@ -115,6 +135,7 @@ pub(super) fn create_inventory(
         ))
         .id();
     let mut inventory = commands.spawn((
+        GameMarker,
         TilesInventory {
             screen_rect: Rect::new(200f32, 200f32, 200f32, 200f32),
         },
