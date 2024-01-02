@@ -1,4 +1,5 @@
 use bevy::{
+    ecs::schedule::{LogLevel, ScheduleBuildSettings},
     log::{self, Level},
     prelude::*,
     render::view::RenderLayers,
@@ -21,6 +22,12 @@ pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
+        app.edit_schedule(Update, |schedule| {
+            schedule.set_build_settings(ScheduleBuildSettings {
+                ambiguity_detection: LogLevel::Warn,
+                ..default()
+            });
+        });
         app.add_plugins((DefaultPlugins, DefaultPickingPlugins, PanCamPlugin));
         let f = File::open("assets/scrabble.en.txt").expect("Could not read file.");
         let reader = BufReader::new(f);
@@ -29,7 +36,8 @@ impl Plugin for GamePlugin {
 
         app.add_systems(Startup, setup::setup);
         app.add_systems(PostStartup, (create_tiles, create_inventory));
-        /*
+        app.add_event::<TileDropped>();
+        app.add_systems(Update, react_tile_dropped.run_if(on_event::<TileDropped>()));
         app.configure_sets(
             PreUpdate,
             (
@@ -37,13 +45,19 @@ impl Plugin for GamePlugin {
                 bevy_pancam::PanCamSystemSet,
             )
                 .chain(),
-        );*/
+        );
         dbg!("test");
     }
 }
 
 #[derive(Resource)]
 pub struct WordsDictionary(PossibleWords);
+
+#[derive(Event)]
+pub struct TileDropped {
+    pub listener: Entity,
+    pub target: Entity,
+}
 
 fn round_to_nearest(value: f32, multiple: f32) -> f32 {
     (value / multiple).round() * multiple
@@ -121,37 +135,15 @@ fn create_tiles(
                 On::<Pointer<DragEnd>>::run(
                     move |event: ListenerMut<Pointer<DragEnd>>,
                           mut pancams: Query<&mut PanCam>,
-                          camera_world: Query<&Transform, With<MainCamera>>,
-                          camera_ui: Query<&OrthographicProjection, With<MainCamera>>,
-                          mut transforms: Query<&mut Transform, Without<MainCamera>>,
-                          inventories: Query<&TilesInventory>,
-                          mut commands: Commands| {
+                          mut tile_dropped_event: EventWriter<TileDropped>| {
                         for mut pancam in &mut pancams {
                             pancam.enabled = true;
                         }
-                        let Ok(mut transform) = transforms.get_mut(event.listener()) else {
-                            return;
-                        };
-                        let camera_world_projection = camera_ui.single();
-                        let camera_transform = camera_world.single();
-
-                        let to_ui = Mat4::from_scale(Vec3::ONE * camera_world_projection.scale)
-                            * transform.compute_matrix();
-                        let to_camera = camera_transform.compute_matrix();
-
-                        let to_ui = to_ui * to_camera;
-                        *transform = Transform::from_matrix(to_ui);
-                        transform.translation.x = round_to_nearest(transform.translation.x, 60f32); // Make the square follow the mouse
-                        transform.translation.y = round_to_nearest(transform.translation.y, 60f32);
-                        tracing::event!(Level::INFO, "stop drag to {:?}", transform.translation);
-                        commands.entity(event.target()).insert(Pickable::default());
-                        commands
-                            .entity(event.listener())
-                            .insert(RenderLayers::layer(0));
-                        commands
-                            .entity(event.target())
-                            .insert(RenderLayers::layer(0));
-                        transform.translation.z = 0f32;
+                        tile_dropped_event.send(TileDropped {
+                            listener: event.listener(),
+                            target: event.target(),
+                        });
+                        tracing::event!(Level::INFO, "(input) stop drag",);
                     },
                 ),
             ))
@@ -168,5 +160,48 @@ fn create_tiles(
                     RaycastPickable,
                 ));
             });
+    }
+}
+
+fn react_tile_dropped(
+    mut commands: Commands,
+    camera_world: Query<&Transform, With<MainCamera>>,
+    camera_ui: Query<&OrthographicProjection, With<MainCamera>>,
+    mut transforms: Query<&mut Transform, Without<MainCamera>>,
+    mut tile_dropped_event: EventReader<TileDropped>,
+) {
+    for tile_dropped in tile_dropped_event.read() {
+        let Ok(mut transform) = transforms.get_mut(tile_dropped.listener) else {
+            return;
+        };
+        let camera_world_projection = camera_ui.single();
+        let camera_transform = camera_world.single();
+
+        let to_ui = Mat4::from_scale(Vec3::ONE * camera_world_projection.scale)
+            * transform.compute_matrix();
+        let to_camera = camera_transform.compute_matrix();
+
+        let to_ui = to_ui * to_camera;
+
+        *transform = Transform::from_matrix(to_ui);
+        transform.translation.x = round_to_nearest(transform.translation.x, 60f32); // Make the square follow the mouse
+        transform.translation.y = round_to_nearest(transform.translation.y, 60f32);
+        tracing::event!(
+            Level::INFO,
+            "(event) stop drag to {:?}",
+            transform.translation
+        );
+        // HACK: to circumvent DragEnd being sometimes before Drag.
+        commands.entity(tile_dropped.listener).insert(*transform);
+        commands
+            .entity(tile_dropped.target)
+            .insert(Pickable::default());
+        commands
+            .entity(tile_dropped.listener)
+            .insert(RenderLayers::layer(0));
+        commands
+            .entity(tile_dropped.target)
+            .insert(RenderLayers::layer(0));
+        transform.translation.z = 0f32;
     }
 }
