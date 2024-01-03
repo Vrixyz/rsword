@@ -1,6 +1,7 @@
 use glam::IVec2;
 use std::{collections::HashMap, vec};
 
+#[derive(Clone)]
 pub struct Tile {
     pub team: usize,
     pub character: char,

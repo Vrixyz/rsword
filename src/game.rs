@@ -219,6 +219,25 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 #[derive(Resource)]
 pub struct WordsDictionary(PossibleWords);
 
+#[derive(Component, Clone)]
+pub struct TilePos(IVec2);
+
+impl From<&IVec2> for TilePos {
+    fn from(value: &IVec2) -> Self {
+        Self(*value)
+    }
+}
+
+impl TilePos {
+    pub fn from_world_pos(pos: &Vec2) -> Self {
+        Self(IVec2::new((pos.x / 60f32) as i32, (-pos.y / 60f32) as i32))
+    }
+
+    pub fn to_local_pos(&self) -> Vec2 {
+        IVec2::new(self.0.x, -self.0.y).as_vec2() * 60f32
+    }
+}
+
 #[derive(Event)]
 pub struct TileDropped {
     pub listener: Entity,
@@ -246,9 +265,10 @@ fn create_tiles(
     let text_alignment = TextAlignment::Center;
     for kv in &table.0.tiles {
         let tile_transform =
-            Transform::from_translation((*kv.0 * IVec2::new(1, -1)).extend(0).as_vec3() * 60f32);
+            Transform::from_translation(TilePos::from(kv.0).to_local_pos().extend(0f32));
         commands
             .spawn((
+                TilePos(*kv.0),
                 GameMarker,
                 /**/
                 Text2dBundle {
@@ -339,9 +359,13 @@ fn create_tiles(
 
 fn react_tile_dropped(
     mut commands: Commands,
+    mut q_table: Query<&mut setup::Table>,
     camera_world: Query<&Transform, With<MainCamera>>,
     camera_ui: Query<&OrthographicProjection, With<MainCamera>>,
-    mut transforms: Query<(Entity, &mut Transform), (Without<MainCamera>, Without<TilesInventory>)>,
+    mut transforms: Query<
+        (Entity, &mut Transform, &mut TilePos),
+        (Without<MainCamera>, Without<TilesInventory>),
+    >,
     mut q_inventory: Query<
         (Entity, &GlobalTransform, &mut Transform, &TilesInventory),
         Without<MainCamera>,
@@ -349,7 +373,9 @@ fn react_tile_dropped(
     mut tile_dropped_event: EventReader<TileDropped>,
 ) {
     for tile_dropped in tile_dropped_event.read() {
-        let Ok((tile_entity, mut transform)) = transforms.get_mut(tile_dropped.listener) else {
+        let Ok((tile_entity, mut transform, mut tile_pos)) =
+            transforms.get_mut(tile_dropped.listener)
+        else {
             return;
         };
         let camera_world_projection = camera_ui.single();
@@ -366,6 +392,7 @@ fn react_tile_dropped(
         transform.translation.y = round_to_nearest(transform.translation.y, 60f32);
 
         let mut layer = LAYER_WORLD;
+        let mut table = q_table.single_mut();
         if let Ok((i_entity, i_global_transform, i_transform, i_inventory)) =
             q_inventory.get_single()
         {
@@ -384,7 +411,20 @@ fn react_tile_dropped(
                 transform.translation -= i_transform.translation;
                 //transform.translation = i_global_transform.transform_point(transform.translation);
                 layer = LAYER_INVENTORY;
+                table.0.tiles.remove(&tile_pos.0);
             }
+        }
+        let possible_new_tile_pos = TilePos::from_world_pos(&transform.translation.xy());
+        if table.0.tiles.contains_key(&possible_new_tile_pos.0) {
+            let original_position = &TilePos::to_local_pos(&tile_pos);
+            transform.translation = original_position.extend(0f32);
+        } else {
+            commands
+                .entity(tile_dropped.listener)
+                .insert(possible_new_tile_pos.clone());
+            let copy = table.0.tiles[&tile_pos.0].clone();
+            table.0.tiles.remove(&tile_pos.0);
+            table.0.tiles.insert(possible_new_tile_pos.0, copy);
         }
 
         tracing::event!(

@@ -71,6 +71,7 @@ pub fn game_setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         },
         GameMenuMarker,
         RenderLayers::layer(4),
+        Pickable::IGNORE,
     ));
     commands
         .spawn((

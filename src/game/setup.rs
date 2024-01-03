@@ -152,6 +152,6 @@ pub(super) fn move_inventory(
     mut q_inventory: Query<&mut Transform, With<TilesInventory>>,
 ) {
     for mut t in q_inventory.iter_mut() {
-        //t.translation = (Vec3::X + Vec3::Y) * 100f32 * time.elapsed_seconds().sin();
+        t.translation = (Vec3::X + Vec3::Y) * 100f32 * time.elapsed_seconds().sin();
     }
 }
