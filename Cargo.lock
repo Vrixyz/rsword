@@ -817,8 +817,6 @@ dependencies = [
 [[package]]
 name = "bevy_pancam"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0fc188c00741b4e7736cf1ba8e394abce7daf479284f5ca551408d36147c7bd"
 dependencies = [
  "bevy",
 ]
@@ -4081,7 +4079,3 @@ dependencies = [
  "quote",
  "syn 2.0.43",
 ]
-
-[[patch.unused]]
-name = "bevy_pancam"
-version = "0.9.0"

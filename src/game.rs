@@ -39,6 +39,10 @@ pub enum GameState {
 
 pub struct GamePlugin;
 
+const LAYER_WORLD: RenderLayers = RenderLayers::layer(0);
+const LAYER_INVENTORY: RenderLayers = RenderLayers::layer(1);
+const LAYER_DRAG: RenderLayers = RenderLayers::layer(2);
+
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app.edit_schedule(Update, |schedule| {
@@ -85,6 +89,7 @@ impl Plugin for GamePlugin {
                 .run_if(on_event::<TileDropped>())
                 .run_if(in_state(GameState::Playing)),
         );
+        app.add_systems(Update, setup::move_inventory);
         app.configure_sets(
             PreUpdate,
             (
@@ -255,6 +260,7 @@ fn create_tiles(
                 On::<Pointer<DragStart>>::run(
                     move |event: ListenerMut<Pointer<DragStart>>,
                           mut t: Query<&mut Transform, Without<MainCamera>>,
+                          mut parent: Query<&Parent>,
                           camera_world: Query<
                         (&Transform, &OrthographicProjection),
                         With<MainCamera>,
@@ -266,13 +272,17 @@ fn create_tiles(
                             bevy::utils::tracing::event!(Level::INFO, "disabling pancams");
                             pancam.enabled = false;
                         }
+                        if let Ok(parent) = parent.get(commands.entity(event.listener()).id()) {
+                            let parent_transform = *t.get(parent.get()).unwrap();
+                            let mut transform = t.get_mut(event.listener()).unwrap();
+                            transform.translation =
+                                parent_transform.transform_point(transform.translation);
+                            commands.entity(event.listener()).remove_parent();
+                        }
                         commands.entity(event.target()).insert(Pickable::IGNORE);
-                        commands
-                            .entity(event.listener())
-                            .insert(RenderLayers::layer(1));
-                        commands
-                            .entity(event.target())
-                            .insert(RenderLayers::layer(1));
+                        commands.entity(event.listener()).insert(LAYER_DRAG);
+                        commands.entity(event.target()).insert(LAYER_DRAG);
+
                         let mut transform = t.get_mut(event.listener()).unwrap();
                         let (camera_world_transform, proj) = camera_world.single();
 
@@ -292,7 +302,7 @@ fn create_tiles(
                 On::<Pointer<Drag>>::listener_component_mut::<Transform>(|drag, transform| {
                     transform.translation.x += drag.delta.x; // Make the square follow the mouse
                     transform.translation.y -= drag.delta.y;
-                    tracing::event!(Level::INFO, "drag to {:?}", transform.translation);
+                    tracing::event!(Level::DEBUG, "drag to {:?}", transform.translation);
                 }),
                 On::<Pointer<DragEnd>>::run(
                     move |event: ListenerMut<Pointer<DragEnd>>,
@@ -301,6 +311,7 @@ fn create_tiles(
                         for mut pancam in &mut pancams {
                             pancam.enabled = true;
                         }
+                        // HACK: to circumvent DragEnd being sometimes before Drag.
                         tile_dropped_event.send(TileDropped {
                             listener: event.listener(),
                             target: event.target(),
@@ -311,6 +322,7 @@ fn create_tiles(
             ))
             .with_children(|parent| {
                 parent.spawn((
+                    LAYER_WORLD,
                     MaterialMesh2dBundle {
                         mesh: meshes.add(Mesh::from(shape::Quad::default())).into(),
                         transform: Transform::from_translation(Vec3::NEG_Z)
@@ -329,11 +341,15 @@ fn react_tile_dropped(
     mut commands: Commands,
     camera_world: Query<&Transform, With<MainCamera>>,
     camera_ui: Query<&OrthographicProjection, With<MainCamera>>,
-    mut transforms: Query<&mut Transform, Without<MainCamera>>,
+    mut transforms: Query<(Entity, &mut Transform), (Without<MainCamera>, Without<TilesInventory>)>,
+    mut q_inventory: Query<
+        (Entity, &GlobalTransform, &mut Transform, &TilesInventory),
+        Without<MainCamera>,
+    >,
     mut tile_dropped_event: EventReader<TileDropped>,
 ) {
     for tile_dropped in tile_dropped_event.read() {
-        let Ok(mut transform) = transforms.get_mut(tile_dropped.listener) else {
+        let Ok((tile_entity, mut transform)) = transforms.get_mut(tile_dropped.listener) else {
             return;
         };
         let camera_world_projection = camera_ui.single();
@@ -348,22 +364,40 @@ fn react_tile_dropped(
         *transform = Transform::from_matrix(to_ui);
         transform.translation.x = round_to_nearest(transform.translation.x, 60f32); // Make the square follow the mouse
         transform.translation.y = round_to_nearest(transform.translation.y, 60f32);
+
+        let mut layer = LAYER_WORLD;
+        if let Ok((i_entity, i_global_transform, i_transform, i_inventory)) =
+            q_inventory.get_single()
+        {
+            let global_pos_inventory = i_transform.transform_point(Vec3::ZERO);
+
+            let range_x =
+                global_pos_inventory.x..(global_pos_inventory.x + i_inventory.screen_rect.width());
+            let range_y =
+                global_pos_inventory.y..(global_pos_inventory.y + i_inventory.screen_rect.height());
+            dbg!(&range_y);
+            if range_x.contains(&transform.translation.x)
+                && range_y.contains(&transform.translation.y)
+            {
+                dbg!("inside");
+                commands.entity(tile_entity).set_parent(i_entity);
+                transform.translation -= i_transform.translation;
+                //transform.translation = i_global_transform.transform_point(transform.translation);
+                layer = LAYER_INVENTORY;
+            }
+        }
+
         tracing::event!(
             Level::INFO,
             "(event) stop drag to {:?}",
             transform.translation
         );
-        // HACK: to circumvent DragEnd being sometimes before Drag.
         commands.entity(tile_dropped.listener).insert(*transform);
         commands
             .entity(tile_dropped.target)
             .insert(Pickable::default());
-        commands
-            .entity(tile_dropped.listener)
-            .insert(RenderLayers::layer(0));
-        commands
-            .entity(tile_dropped.target)
-            .insert(RenderLayers::layer(0));
+        commands.entity(tile_dropped.listener).insert(layer);
+        commands.entity(tile_dropped.target).insert(layer);
         transform.translation.z = 0f32;
     }
 }
