@@ -1,11 +1,13 @@
 use bevy::{
     ecs::schedule::{LogLevel, ScheduleBuildSettings},
+    input::common_conditions::input_toggle_active,
     log::{self, Level},
     prelude::*,
     render::view::RenderLayers,
     sprite::MaterialMesh2dBundle,
     utils::tracing,
 };
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
 //use bevy_eventlistener::prelude::*;
 use bevy_mod_picking::{
     backends::raycast::{RaycastBackendSettings, RaycastPickable},
@@ -59,6 +61,9 @@ impl Plugin for GamePlugin {
             .add_systems(Update, load_game.run_if(on_event::<StartGame>()));
         app.add_systems(Update, start_game.run_if(in_state(GameState::Loading)));
         app.add_plugins((DefaultPlugins, DefaultPickingPlugins, PanCamPlugin));
+        app.add_plugins(
+            WorldInspectorPlugin::default().run_if(input_toggle_active(true, KeyCode::Escape)),
+        );
         app.add_state::<GameState>();
         app.add_event::<StartGame>();
         app.add_event::<game::game_ui::ExitGame>();
@@ -172,6 +177,8 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             ..default()
         },
         MenuMarker,
+        RenderLayers::layer(0),
+        Pickable::IGNORE,
     ));
     commands
         .spawn((
@@ -221,6 +228,8 @@ pub struct WordsDictionary(PossibleWords);
 
 #[derive(Component, Clone)]
 pub struct TilePos(IVec2);
+#[derive(Component, Clone)]
+pub struct CurrentTable(Entity);
 
 impl From<&IVec2> for TilePos {
     fn from(value: &IVec2) -> Self {
@@ -250,11 +259,11 @@ fn round_to_nearest(value: f32, multiple: f32) -> f32 {
 
 fn create_tiles(
     mut commands: Commands,
-    q_table: Query<&setup::Table>,
+    q_table: Query<(Entity, &setup::Table)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let Ok(table) = q_table.get_single() else {
+    let Ok((table_entity, table)) = q_table.get_single() else {
         return;
     };
     let text_style = TextStyle {
@@ -269,6 +278,7 @@ fn create_tiles(
         commands
             .spawn((
                 TilePos(*kv.0),
+                CurrentTable(table_entity),
                 GameMarker,
                 /**/
                 Text2dBundle {
@@ -363,7 +373,7 @@ fn react_tile_dropped(
     camera_world: Query<&Transform, With<MainCamera>>,
     camera_ui: Query<&OrthographicProjection, With<MainCamera>>,
     mut transforms: Query<
-        (Entity, &mut Transform, &mut TilePos),
+        (Entity, &mut CurrentTable, &mut Transform, &mut TilePos),
         (Without<MainCamera>, Without<TilesInventory>),
     >,
     mut q_inventory: Query<
@@ -373,7 +383,7 @@ fn react_tile_dropped(
     mut tile_dropped_event: EventReader<TileDropped>,
 ) {
     for tile_dropped in tile_dropped_event.read() {
-        let Ok((tile_entity, mut transform, mut tile_pos)) =
+        let Ok((tile_entity, mut current_table_entity, mut transform, mut tile_pos)) =
             transforms.get_mut(tile_dropped.listener)
         else {
             return;
@@ -392,7 +402,7 @@ fn react_tile_dropped(
         transform.translation.y = round_to_nearest(transform.translation.y, 60f32);
 
         let mut layer = LAYER_WORLD;
-        let mut table = q_table.single_mut();
+        let mut possible_new_inventory = current_table_entity.0;
         if let Ok((i_entity, i_global_transform, i_transform, i_inventory)) =
             q_inventory.get_single()
         {
@@ -411,20 +421,34 @@ fn react_tile_dropped(
                 transform.translation -= i_transform.translation;
                 //transform.translation = i_global_transform.transform_point(transform.translation);
                 layer = LAYER_INVENTORY;
-                table.0.tiles.remove(&tile_pos.0);
+                possible_new_inventory = i_entity;
             }
         }
         let possible_new_tile_pos = TilePos::from_world_pos(&transform.translation.xy());
-        if table.0.tiles.contains_key(&possible_new_tile_pos.0) {
+
+        if q_table
+            .get_mut(possible_new_inventory)
+            .unwrap()
+            .0
+            .tiles
+            .contains_key(&possible_new_tile_pos.0)
+        {
             let original_position = &TilePos::to_local_pos(&tile_pos);
             transform.translation = original_position.extend(0f32);
         } else {
+            let mut current_table = q_table.get_mut(current_table_entity.0).unwrap();
+            current_table_entity.0 = possible_new_inventory;
             commands
                 .entity(tile_dropped.listener)
                 .insert(possible_new_tile_pos.clone());
-            let copy = table.0.tiles[&tile_pos.0].clone();
-            table.0.tiles.remove(&tile_pos.0);
-            table.0.tiles.insert(possible_new_tile_pos.0, copy);
+            let copy = current_table.0.tiles[&tile_pos.0].clone();
+            current_table.0.tiles.remove(&tile_pos.0);
+
+            let mut possible_new_inventory = q_table.get_mut(possible_new_inventory).unwrap();
+            possible_new_inventory
+                .0
+                .tiles
+                .insert(possible_new_tile_pos.0, copy);
         }
 
         tracing::event!(
@@ -432,12 +456,11 @@ fn react_tile_dropped(
             "(event) stop drag to {:?}",
             transform.translation
         );
-        commands.entity(tile_dropped.listener).insert(*transform);
         commands
             .entity(tile_dropped.target)
             .insert(Pickable::default());
         commands.entity(tile_dropped.listener).insert(layer);
         commands.entity(tile_dropped.target).insert(layer);
-        transform.translation.z = 0f32;
+        transform.translation.z = 10f32;
     }
 }

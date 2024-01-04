@@ -7,6 +7,7 @@ pub struct Tile {
     pub character: char,
 }
 
+#[derive(Default)]
 pub struct Table {
     pub tiles: HashMap<IVec2, Tile>,
 }

@@ -15,7 +15,7 @@ use super::WordsDictionary;
 
 use super::{LAYER_DRAG, LAYER_INVENTORY};
 
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct Table(pub crate::word_table::Table);
 
 #[derive(Component)]
@@ -120,6 +120,7 @@ pub(super) fn create_inventory(
         },
         LAYER_INVENTORY.with(2),
         CameraUI,
+        RaycastPickable,
     ));
 
     let inventory_background = commands
@@ -142,6 +143,7 @@ pub(super) fn create_inventory(
         TilesInventory {
             screen_rect: Rect::new(200f32, 200f32, 400f32, 400f32),
         },
+        Table::default(),
         SpatialBundle::default(),
     ));
     inventory.add_child(inventory_background);
