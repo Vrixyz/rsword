@@ -70,7 +70,7 @@ pub fn game_setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             ..default()
         },
         GameMenuMarker,
-        RenderLayers::layer(4),
+        RenderLayers::layer(0),
         Pickable::IGNORE,
     ));
     commands
@@ -86,7 +86,6 @@ pub fn game_setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 ..default()
             },
             GameMenuMarker,
-            RenderLayers::layer(5),
             Pickable::IGNORE,
         ))
         .with_children(|parent| {
@@ -108,20 +107,16 @@ pub fn game_setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                         background_color: NORMAL_BUTTON.into(),
                         ..default()
                     },
-                    RenderLayers::layer(4),
                 ))
                 .with_children(|parent| {
-                    parent.spawn((
-                        TextBundle::from_section(
-                            "Button",
-                            TextStyle {
-                                font: default(),
-                                font_size: 40.0,
-                                color: Color::rgb(0.9, 0.9, 0.9),
-                            },
-                        ),
-                        RenderLayers::layer(4),
-                    ));
+                    parent.spawn((TextBundle::from_section(
+                        "Button",
+                        TextStyle {
+                            font: default(),
+                            font_size: 40.0,
+                            color: Color::rgb(0.9, 0.9, 0.9),
+                        },
+                    ),));
                 });
         });
 }

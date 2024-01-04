@@ -11,9 +11,7 @@ use std::{collections::HashMap, fs::File, io::BufReader};
 
 use crate::{word_table::Tile, word_tree::load_from};
 
-use super::WordsDictionary;
-
-use super::{LAYER_DRAG, LAYER_INVENTORY};
+use super::{WordsDictionary, LAYER_WORLD};
 
 #[derive(Component, Default)]
 pub struct Table(pub crate::word_table::Table);
@@ -49,6 +47,7 @@ pub(super) fn setup(mut commands: Commands) {
         RaycastPickable,
         MainCamera,
         GameMarker,
+        LAYER_WORLD,
     ));
 
     let table = crate::word_table::Table {
@@ -97,7 +96,7 @@ pub(super) fn setup(mut commands: Commands) {
             ),
         ]),
     };
-    commands.spawn((Table(table), GameMarker));
+    commands.spawn((SpatialBundle::default(), Table(table), GameMarker));
 }
 
 pub(super) fn create_inventory(
@@ -105,24 +104,6 @@ pub(super) fn create_inventory(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    // 2d inventory camera
-    commands.spawn((
-        GameMarker,
-        Camera2dBundle {
-            camera_2d: Camera2d {
-                clear_color: ClearColorConfig::None,
-            },
-            camera: Camera {
-                order: 2,
-                ..default()
-            },
-            ..default()
-        },
-        LAYER_INVENTORY.with(2),
-        CameraUI,
-        RaycastPickable,
-    ));
-
     let inventory_background = commands
         .spawn((
             // As noted above, we are adding children here but we don't need to add an event
@@ -131,11 +112,13 @@ pub(super) fn create_inventory(
                 mesh: meshes
                     .add(Mesh::from(shape::Quad::new(Vec2::splat(200f32))))
                     .into(),
-                transform: Transform::from_translation((Vec3::X + Vec3::Y) * 100f32),
+                transform: Transform::from_translation(
+                    ((Vec2::X + Vec2::Y) * 100f32).extend(-1f32),
+                ),
                 material: materials.add(ColorMaterial::from(Color::hsl(50.0, 1.0, 0.5))),
                 ..Default::default()
             },
-            LAYER_INVENTORY,
+            LAYER_WORLD,
         ))
         .id();
     let mut inventory = commands.spawn((
@@ -154,6 +137,6 @@ pub(super) fn move_inventory(
     mut q_inventory: Query<&mut Transform, With<TilesInventory>>,
 ) {
     for mut t in q_inventory.iter_mut() {
-        t.translation = (Vec3::X + Vec3::Y) * 100f32 * time.elapsed_seconds().sin();
+        t.translation = ((Vec2::X + Vec2::Y) * 100f32 * time.elapsed_seconds().sin()).extend(5f32);
     }
 }

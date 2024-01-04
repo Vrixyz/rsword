@@ -41,9 +41,7 @@ pub enum GameState {
 
 pub struct GamePlugin;
 
-const LAYER_WORLD: RenderLayers = RenderLayers::layer(0);
-const LAYER_INVENTORY: RenderLayers = RenderLayers::layer(1);
-const LAYER_DRAG: RenderLayers = RenderLayers::layer(2);
+const LAYER_WORLD: RenderLayers = RenderLayers::layer(1);
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
@@ -277,6 +275,7 @@ fn create_tiles(
             Transform::from_translation(TilePos::from(kv.0).to_local_pos().extend(0f32));
         commands
             .spawn((
+                LAYER_WORLD,
                 TilePos(*kv.0),
                 CurrentTable(table_entity),
                 GameMarker,
@@ -289,12 +288,8 @@ fn create_tiles(
                 },
                 On::<Pointer<DragStart>>::run(
                     move |event: ListenerMut<Pointer<DragStart>>,
-                          mut t: Query<&mut Transform, Without<MainCamera>>,
-                          mut parent: Query<&Parent>,
-                          camera_world: Query<
-                        (&Transform, &OrthographicProjection),
-                        With<MainCamera>,
-                    >,
+                          mut t: Query<(&GlobalTransform, &mut Transform), Without<MainCamera>>,
+                          parent: Query<&Parent>,
                           mut pancams: Query<&mut PanCam>,
                           mut commands: Commands| {
                         tracing::event!(Level::INFO, "disable pancams");
@@ -302,30 +297,14 @@ fn create_tiles(
                             bevy::utils::tracing::event!(Level::INFO, "disabling pancams");
                             pancam.enabled = false;
                         }
-                        if let Ok(parent) = parent.get(commands.entity(event.listener()).id()) {
-                            let parent_transform = *t.get(parent.get()).unwrap();
-                            let mut transform = t.get_mut(event.listener()).unwrap();
-                            transform.translation =
-                                parent_transform.transform_point(transform.translation);
+                        if let Ok(_parent) = parent.get(commands.entity(event.listener()).id()) {
+                            let (g_transform, mut transform) = t.get_mut(event.listener()).unwrap();
+                            *transform = Transform::from_matrix(g_transform.compute_matrix());
                             commands.entity(event.listener()).remove_parent();
                         }
                         commands.entity(event.target()).insert(Pickable::IGNORE);
-                        commands.entity(event.listener()).insert(LAYER_DRAG);
-                        commands.entity(event.target()).insert(LAYER_DRAG);
 
-                        let mut transform = t.get_mut(event.listener()).unwrap();
-                        let (camera_world_transform, proj) = camera_world.single();
-
-                        let to_world =
-                            Mat4::from_scale(Vec3::ONE / proj.scale) * transform.compute_matrix();
-                        let to_camera = camera_world_transform.compute_matrix();
-
-                        let to_ui = to_world * to_camera.inverse();
-
-                        let position_relative_to_camera = Transform::from_matrix(to_ui);
-
-                        *transform = position_relative_to_camera;
-                        //transform.scale = Vec3::ONE * proj.scale;
+                        let (_, mut transform) = t.get_mut(event.listener()).unwrap();
                         transform.translation.z = 10f32;
                     },
                 ), // Disable picking + pancam
@@ -370,8 +349,6 @@ fn create_tiles(
 fn react_tile_dropped(
     mut commands: Commands,
     mut q_table: Query<&mut setup::Table>,
-    camera_world: Query<&Transform, With<MainCamera>>,
-    camera_ui: Query<&OrthographicProjection, With<MainCamera>>,
     mut transforms: Query<
         (Entity, &mut CurrentTable, &mut Transform, &mut TilePos),
         (Without<MainCamera>, Without<TilesInventory>),
@@ -388,21 +365,9 @@ fn react_tile_dropped(
         else {
             return;
         };
-        let camera_world_projection = camera_ui.single();
-        let camera_transform = camera_world.single();
 
-        let to_ui = Mat4::from_scale(Vec3::ONE * camera_world_projection.scale)
-            * transform.compute_matrix();
-        let to_camera = camera_transform.compute_matrix();
-
-        let to_ui = to_ui * to_camera;
-
-        *transform = Transform::from_matrix(to_ui);
-        transform.translation.x = round_to_nearest(transform.translation.x, 60f32); // Make the square follow the mouse
-        transform.translation.y = round_to_nearest(transform.translation.y, 60f32);
-
-        let mut layer = LAYER_WORLD;
-        let mut possible_new_inventory = current_table_entity.0;
+        let mut possible_target_inventory = None;
+        // Should iterate between all q_inventory ()
         if let Ok((i_entity, i_global_transform, i_transform, i_inventory)) =
             q_inventory.get_single()
         {
@@ -417,27 +382,34 @@ fn react_tile_dropped(
                 && range_y.contains(&transform.translation.y)
             {
                 dbg!("inside");
-                commands.entity(tile_entity).set_parent(i_entity);
                 transform.translation -= i_transform.translation;
-                //transform.translation = i_global_transform.transform_point(transform.translation);
-                layer = LAYER_INVENTORY;
-                possible_new_inventory = i_entity;
+                possible_target_inventory = Some(i_entity);
             }
         }
+        transform.translation.x = round_to_nearest(transform.translation.x, 60f32); // Make the square follow the mouse
+        transform.translation.y = round_to_nearest(transform.translation.y, 60f32);
         let possible_new_tile_pos = TilePos::from_world_pos(&transform.translation.xy());
 
-        if q_table
-            .get_mut(possible_new_inventory)
-            .unwrap()
-            .0
-            .tiles
-            .contains_key(&possible_new_tile_pos.0)
+        if possible_target_inventory.is_none()
+            || q_table
+                .get_mut(possible_target_inventory.unwrap())
+                .unwrap()
+                .0
+                .tiles
+                .contains_key(&possible_new_tile_pos.0)
         {
             let original_position = &TilePos::to_local_pos(&tile_pos);
             transform.translation = original_position.extend(0f32);
+            commands
+                .entity(tile_entity)
+                .set_parent(dbg!(current_table_entity.0));
         } else {
+            let possible_new_inventory = possible_target_inventory.unwrap();
             let mut current_table = q_table.get_mut(current_table_entity.0).unwrap();
             current_table_entity.0 = possible_new_inventory;
+            commands
+                .entity(tile_entity)
+                .set_parent(dbg!(possible_new_inventory));
             commands
                 .entity(tile_dropped.listener)
                 .insert(possible_new_tile_pos.clone());
@@ -459,8 +431,8 @@ fn react_tile_dropped(
         commands
             .entity(tile_dropped.target)
             .insert(Pickable::default());
-        commands.entity(tile_dropped.listener).insert(layer);
-        commands.entity(tile_dropped.target).insert(layer);
-        transform.translation.z = 10f32;
+        commands.entity(tile_dropped.listener);
+        commands.entity(tile_dropped.target);
+        transform.translation.z = 1f32;
     }
 }
