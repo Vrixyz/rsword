@@ -80,7 +80,7 @@ impl Plugin for GamePlugin {
         );
         app.add_systems(
             Update,
-            game::game_ui::button_system.run_if(in_state(GameState::Playing)),
+            (game::game_ui::button_system, setup::scale_with_camera, setup::on_window_resize).run_if(in_state(GameState::Playing)),
         );
         app.add_systems(Update, button_system.run_if(in_state(GameState::Disabled)));
         app.add_systems(OnExit(GameState::Playing), setup::unsetup);
