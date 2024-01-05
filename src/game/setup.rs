@@ -4,6 +4,7 @@ use bevy::{
 };
 use bevy_mod_picking::{
     backends::raycast::{RaycastBackendSettings, RaycastPickable},
+    picking_core::Pickable,
     PickableBundle,
 };
 use bevy_pancam::*;
@@ -16,7 +17,7 @@ use super::{WordsDictionary, LAYER_WORLD};
 #[derive(Component, Default)]
 pub struct Table(pub crate::word_table::Table);
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 pub struct TilesInventory {
     pub screen_rect: Rect,
 }
@@ -27,6 +28,9 @@ pub struct CameraUI;
 
 #[derive(Component)]
 pub struct GameMarker;
+
+#[derive(Component)]
+pub struct FollowCamera;
 
 pub(super) fn unsetup(mut commands: Commands, q_to_despawn: Query<Entity, With<GameMarker>>) {
     commands.remove_resource::<WordsDictionary>();
@@ -96,47 +100,51 @@ pub(super) fn setup(mut commands: Commands) {
             ),
         ]),
     };
-    commands.spawn((SpatialBundle::default(), Table(table), GameMarker));
+    commands.spawn((
+        SpatialBundle::default(),
+        TilesInventory {
+            screen_rect: Rect::new(
+                f32::NEG_INFINITY,
+                f32::NEG_INFINITY,
+                f32::INFINITY,
+                f32::INFINITY,
+            ),
+        },
+        Table(table),
+        GameMarker,
+    ));
 }
 
 pub(super) fn create_inventory(
     mut commands: Commands,
+    q_camera: Query<Entity, With<MainCamera>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
+    let size = Vec2::splat(60f32 * 4f32 + 60f32);
     let inventory_background = commands
         .spawn((
             // As noted above, we are adding children here but we don't need to add an event
             // listener. Events on children will bubble up to the parent!
             MaterialMesh2dBundle {
-                mesh: meshes
-                    .add(Mesh::from(shape::Quad::new(Vec2::splat(200f32))))
-                    .into(),
-                transform: Transform::from_translation(
-                    ((Vec2::X + Vec2::Y) * 100f32).extend(-1f32),
-                ),
+                mesh: meshes.add(Mesh::from(shape::Quad::new(size))).into(),
+                transform: Transform::from_translation(Vec2::ZERO.extend(-0.1f32)),
                 material: materials.add(ColorMaterial::from(Color::hsl(50.0, 1.0, 0.5))),
                 ..Default::default()
             },
+            RaycastPickable,
             LAYER_WORLD,
         ))
         .id();
     let mut inventory = commands.spawn((
         GameMarker,
         TilesInventory {
-            screen_rect: Rect::new(200f32, 200f32, 400f32, 400f32),
+            screen_rect: Rect::new(-size.x / 2f32, -size.y / 2f32, size.x / 2f32, size.y / 2f32),
         },
         Table::default(),
         SpatialBundle::default(),
     ));
+    inventory.insert(Transform::from_translation(Vec3::Z * 2f32));
+    inventory.set_parent(q_camera.single());
     inventory.add_child(inventory_background);
-}
-
-pub(super) fn move_inventory(
-    time: Res<Time>,
-    mut q_inventory: Query<&mut Transform, With<TilesInventory>>,
-) {
-    for mut t in q_inventory.iter_mut() {
-        t.translation = ((Vec2::X + Vec2::Y) * 100f32 * time.elapsed_seconds().sin()).extend(5f32);
-    }
 }
